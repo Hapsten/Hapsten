@@ -7,17 +7,30 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+export const Brand = {
+  coral: '#E4574D',
+  coralDark: '#C7433B',
+  lime: '#D7F77B',
+  limeSoft: '#EEFAD3',
+  cream: '#FFFEF8',
+  ink: '#1C1B1A',
+  inkSecondary: '#6B6862',
+  line: '#EDE8DF',
+  cardBg: '#FFFFFF',
+  iconChip: '#F5EFE3',
+} as const;
+
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
+    text: Brand.ink,
+    background: Brand.cream,
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    textSecondary: Brand.inkSecondary,
   },
   dark: {
     text: '#ffffff',
-    background: '#000000',
+    background: '#141312',
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',

@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Firebase config (contains API keys - do not commit)
+src/firebase/config.ts
