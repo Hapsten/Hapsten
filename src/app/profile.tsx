@@ -1,6 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Brand, Spacing } from '@/constants/theme';
@@ -27,7 +26,6 @@ export default function ProfileScreen() {
 
   const displayName = user?.displayName || user?.email?.split('@')[0] || 'Hapsteen User';
   const email = user?.email || '';
-  const photoURL = user?.photoURL;
 
   const stats: StatItem[] = [
     { label: 'Events Joined', value: 0, icon: 'calendar-outline' },
@@ -55,18 +53,10 @@ export default function ProfileScreen() {
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}>
-          {/* Profile Header */}
+          {/* Profile Header — compact */}
           <View style={styles.header}>
             <View style={styles.avatarContainer}>
-              {photoURL ? (
-                <ImageWithFallback
-                  source={{ uri: photoURL }}
-                  style={styles.avatar}
-                  fallback={displayName.charAt(0).toUpperCase()}
-                />
-              ) : (
-                <AvatarPlaceholder letter={displayName.charAt(0).toUpperCase()} />
-              )}
+              <AvatarPlaceholder letter={displayName.charAt(0).toUpperCase()} />
             </View>
             <View style={styles.info}>
               <ThemedText type="title" style={styles.name} themeColor="text">
@@ -76,13 +66,6 @@ export default function ProfileScreen() {
                 {email}
               </ThemedText>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Edit profile"
-              onPress={() => router.push('/profile/edit' as never)}
-              style={styles.editBtn}>
-              <Ionicons name="create-outline" size={20} color={Brand.coral} />
-            </Pressable>
           </View>
 
           <View style={styles.divider} />
@@ -179,27 +162,6 @@ function AvatarPlaceholder({ letter }: { letter: string }) {
   );
 }
 
-function ImageWithFallback({
-  source,
-  style,
-  fallback,
-}: {
-  source: { uri: string };
-  style: any;
-  fallback: string;
-}) {
-  return (
-    <View style={[styles.avatarContainer]}>
-      <Pressable style={styles.avatar}>
-        {/* expo-image or Image can go here; kept as View for now to match app style */}
-        <ThemedText type="title" style={styles.avatarLetter} themeColor="text">
-          {fallback}
-        </ThemedText>
-      </Pressable>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -214,31 +176,21 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: Spacing.six,
   },
   header: {
     alignItems: 'center',
-    gap: 16,
-    marginBottom: 24,
+    gap: 8,
+    marginBottom: 16,
   },
   avatarContainer: {
     alignItems: 'center',
   },
-  avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: Brand.iconChip,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Brand.line,
-  },
   avatarPlaceholder: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: Brand.iconChip,
     alignItems: 'center',
     justifyContent: 'center',
@@ -246,64 +198,53 @@ const styles = StyleSheet.create({
     borderColor: Brand.line,
   },
   avatarLetter: {
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '800',
     color: Brand.ink,
   },
   info: {
-    gap: 6,
+    gap: 4,
+    alignItems: 'center',
   },
   name: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     color: Brand.ink,
     letterSpacing: -0.5,
+    textAlign: 'center',
   },
   email: {
-    fontSize: 14,
+    fontSize: 13,
     color: Brand.inkSecondary,
-  },
-  editBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Brand.cardBg,
-    borderWidth: 1,
-    borderColor: Brand.line,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    textAlign: 'center',
   },
   divider: {
     height: 1,
     backgroundColor: Brand.line,
-    marginVertical: 20,
+    marginVertical: 16,
   },
   section: {
-    gap: 16,
+    gap: 12,
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: Brand.inkSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 4,
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   statCard: {
     flex: 1,
     backgroundColor: Brand.cardBg,
     borderWidth: 1,
     borderColor: Brand.line,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOpacity: 0.04,
@@ -312,23 +253,24 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   statIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: Brand.limeSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: Brand.ink,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: Brand.inkSecondary,
     marginTop: 4,
+    textAlign: 'center',
   },
   menuList: {
     gap: 0,
@@ -340,9 +282,9 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.cardBg,
     borderWidth: 1,
     borderColor: Brand.line,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     marginBottom: 8,
   },
   menuItemDestructive: {
@@ -350,16 +292,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDF2F1',
   },
   menuIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: Brand.iconChip,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   menuLabel: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: Brand.ink,
     flex: 1,
