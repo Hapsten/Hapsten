@@ -20,6 +20,8 @@ export default function RootLayout() {
         <Stack.Screen name="plans" />
         <Stack.Screen name="profile" />
         <Stack.Screen name="map" options={{ title: 'Map' }} />
+        <Stack.Screen name="chat" options={{ headerShown: false }} />
+        <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
         <Stack.Screen
           name="create"
           options={{ presentation: 'modal', title: 'Create event' }}

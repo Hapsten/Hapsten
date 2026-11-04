@@ -7,7 +7,7 @@ import { Brand } from '@/constants/theme';
 
 type TabItem = {
   label: string;
-  href: '/' | '/discover' | '/plans' | '/profile';
+  href: '/' | '/discover' | '/plans' | '/profile' | '/chat';
   icon: keyof typeof Ionicons.glyphMap;
   iconActive: keyof typeof Ionicons.glyphMap;
 };
@@ -18,6 +18,7 @@ const LEFT_TABS: TabItem[] = [
 ];
 
 const RIGHT_TABS: TabItem[] = [
+  { label: 'Messages', href: '/chat', icon: 'chatbubble-outline', iconActive: 'chatbubble' },
   { label: 'Plans', href: '/plans', icon: 'calendar-outline', iconActive: 'calendar' },
   { label: 'Profile', href: '/profile', icon: 'person-outline', iconActive: 'person' },
 ];
