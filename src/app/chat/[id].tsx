@@ -56,6 +56,10 @@ export default function ChatScreen() {
       messageType: 'text',
     });
     setInput('');
+    // Scroll to bottom after sending
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
   const isSent = (msg: Message) => msg.senderId === user?.uid;
