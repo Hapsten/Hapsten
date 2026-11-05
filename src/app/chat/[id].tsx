@@ -129,10 +129,11 @@ export default function ChatScreen() {
           <ScrollView
             ref={scrollRef}
             style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={{ flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled">
-            {messages.map((msg, index) => (
+            <View style={styles.messagesWrapper}>
+              {messages.map((msg, index) => (
               <View key={msg.id} style={styles.messageContainer}>
                 {isNewDay(index) && (
                   <View style={styles.dateSeparator}>
@@ -215,6 +216,7 @@ export default function ChatScreen() {
                 </ThemedText>
               </View>
             )}
+            </View>
           </ScrollView>
         )}
 
@@ -298,12 +300,12 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
   },
-  scrollContent: {
+  messagesWrapper: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 14,
     gap: 8,
-    justifyContent: 'flex-end',
-    minHeight: '100%',
   },
   messageContainer: {
     width: '100%',
