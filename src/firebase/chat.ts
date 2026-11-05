@@ -118,17 +118,21 @@ export function subscribeToChats(
   callback: (chats: Chat[]) => void
 ) {
   const chatsRef = collection(db, 'chats');
-  const q = query(
-    chatsRef,
-    where('participants', 'array-contains', userId),
-    orderBy('lastMessageAt', 'desc')
-  );
+  // Query without orderBy to avoid needing a composite index;
+  // sorting is done client-side below.
+  const q = query(chatsRef, where('participants', 'array-contains', userId));
 
   return onSnapshot(q, (snapshot) => {
     const chats: Chat[] = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...(doc.data() as DocumentData),
     })) as Chat[];
+    // Sort client-side by lastMessageAt descending
+    chats.sort((a, b) => {
+      const aTime = a.lastMessageAt?.toDate?.() ?? new Date(0);
+      const bTime = b.lastMessageAt?.toDate?.() ?? new Date(0);
+      return bTime.getTime() - aTime.getTime();
+    });
     callback(chats);
   });
 }
