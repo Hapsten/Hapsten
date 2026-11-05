@@ -44,13 +44,26 @@ export async function getOrCreateChat(
   const sorted = [...participantIds].sort();
   const chatsRef = collection(db, 'chats');
 
-  // Look for an existing chat with exactly these participants
-  const q = query(chatsRef, where('participants', '==', sorted));
+  // Build query: by activityId if provided (different events = different chats),
+  // otherwise by exact participants match
+  let q;
+  if (options?.activityId) {
+    q = query(chatsRef, where('activityId', '==', options.activityId));
+  } else {
+    q = query(chatsRef, where('participants', '==', sorted));
+  }
+
   const snapshot = await getDocs(q);
 
-  if (!snapshot.empty) {
-    const chatDoc = snapshot.docs[0];
-    return chatDoc.id;
+  // Find exact participant match among results
+  const matchingDoc = snapshot.docs.find((doc) => {
+    const data = doc.data() as any;
+    const docParticipants = [...data.participants].sort();
+    return JSON.stringify(docParticipants) === JSON.stringify(sorted);
+  });
+
+  if (matchingDoc) {
+    return matchingDoc.id;
   }
 
   // Create new chat
