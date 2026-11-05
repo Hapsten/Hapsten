@@ -154,14 +154,13 @@ export default function ChatScreen() {
                     </View>
                   )}
                   <View style={styles.bubbleContainer}>
-                    <View style={styles.bubble}>
+                    <View style={[styles.bubble, isSent(msg) ? styles.bubbleSent : styles.bubbleReceived]}>
                       <ThemedText
                         type="default"
                         style={[
                           styles.messageText,
                           isSent(msg) ? styles.messageTextSent : styles.messageTextReceived,
                         ]}
-                        themeColor="text"
                       >
                         {msg.content}
                       </ThemedText>
@@ -173,7 +172,6 @@ export default function ChatScreen() {
                           styles.messageTime,
                           isSent(msg) ? styles.messageTimeSent : styles.messageTimeReceived,
                         ]}
-                        themeColor="textSecondary"
                       >
                         {formatTime(msg.createdAt)}
                       </ThemedText>
@@ -352,6 +350,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 16,
+  },
+  bubbleSent: {
+    backgroundColor: Brand.coral,
+  },
+  bubbleReceived: {
+    backgroundColor: Brand.cardBg,
+    borderWidth: 1,
+    borderColor: Brand.line,
   },
   messageText: {
     fontSize: 15,
