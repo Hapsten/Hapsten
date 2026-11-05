@@ -19,7 +19,7 @@ export default function CreateEventScreen() {
         </Pressable>
         <Text style={styles.title}>Create event</Text>
         <Text style={styles.subtitle}>
-          Pick a time, game, and venue — we&apos;ll open a group chat for everyone who joins.
+          Pick a time, game, and location — we&apos;ll open a group chat for everyone who joins.
         </Text>
 
         <View style={styles.card}>
@@ -33,7 +33,7 @@ export default function CreateEventScreen() {
           </View>
           <View style={styles.row}>
             <Ionicons name="location-outline" size={18} color={Brand.coral} />
-            <Text style={styles.rowText}>Venue · Newtown</Text>
+            <Text style={styles.rowText}>Location · Newtown</Text>
           </View>
         </View>
       </SafeAreaView>
