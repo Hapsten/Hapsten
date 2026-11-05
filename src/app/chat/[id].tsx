@@ -302,6 +302,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     gap: 8,
+    justifyContent: 'flex-end',
+    minHeight: '100%',
   },
   messageContainer: {
     width: '100%',
