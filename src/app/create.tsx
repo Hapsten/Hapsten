@@ -15,16 +15,34 @@ import { useState } from 'react';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { Brand } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
+import { useAuth } from '@/contexts/AuthContext';
+import { getOrCreateChat } from '@/firebase/chat';
 
 export default function CreateEventScreen() {
+  const { user } = useAuth();
   const [time, setTime] = useState('Today · 5:00 – 7:00 PM');
   const [event, setEvent] = useState('Football · casual kickabout');
   const [location, setLocation] = useState('Newtown');
+  const [creating, setCreating] = useState(false);
 
-  const handleCreate = () => {
-    router.push(
-      `/plans?activity=${encodeURIComponent(event)}&date=${encodeURIComponent(time)}` as never,
-    );
+  const handleCreate = async () => {
+    if (!user) return;
+    setCreating(true);
+    try {
+      // Create a Firebase chat for this event with the current user
+      const chatId = await getOrCreateChat([user.uid], {
+        activityId: event,
+        activityTitle: event,
+      });
+      // Open the chat
+      router.push(`/chat/${chatId}` as never);
+    } catch {
+      setCreating(false);
+      // Fallback: navigate to plans if chat creation fails
+      router.push(
+        `/plans?activity=${encodeURIComponent(event)}&date=${encodeURIComponent(time)}` as never,
+      );
+    }
   };
 
   return (
@@ -85,10 +103,15 @@ export default function CreateEventScreen() {
           accessibilityRole="button"
           accessibilityLabel="Create event and open chat"
           onPress={handleCreate}
-          style={({ pressed }) => [styles.cta, pressed && styles.pressed]}>
-          <Ionicons name="checkmark" size={18} color="#fff" />
+          disabled={creating}
+          style={({ pressed }) => [
+            styles.cta,
+            creating && styles.ctaDisabled,
+            pressed && !creating && styles.pressed,
+          ]}>
+          <Ionicons name={creating ? 'refresh-outline' : 'checkmark'} size={18} color="#fff" />
           <ThemedText type="smallBold" style={styles.ctaText} themeColor="text">
-            Create · Open chat
+            {creating ? 'Creating…' : 'Create · Open chat'}
           </ThemedText>
         </Pressable>
       </SafeAreaView>
@@ -198,6 +221,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
+  },
+  ctaDisabled: {
+    backgroundColor: Brand.line,
   },
   ctaText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   pressed: { opacity: 0.85 },
