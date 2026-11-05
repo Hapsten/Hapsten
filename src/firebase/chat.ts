@@ -5,7 +5,6 @@ import {
   addDoc,
   query,
   where,
-  orderBy,
   onSnapshot,
   serverTimestamp,
   writeBatch,
@@ -145,13 +144,21 @@ export function subscribeToMessages(
   callback: (messages: Message[]) => void
 ) {
   const messagesRef = collection(db, 'chats', chatId, 'messages');
-  const q = query(messagesRef, orderBy('createdAt', 'asc'));
+  // Query without orderBy to avoid needing a composite index;
+  // sorting is done client-side below.
+  const q = query(messagesRef);
 
   return onSnapshot(q, (snapshot) => {
     const messages: Message[] = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...(doc.data() as DocumentData),
     })) as Message[];
+    // Sort client-side by createdAt ascending
+    messages.sort((a, b) => {
+      const aTime = a.createdAt?.toDate?.() ?? new Date(0);
+      const bTime = b.createdAt?.toDate?.() ?? new Date(0);
+      return aTime.getTime() - bTime.getTime();
+    });
     callback(messages);
   });
 }

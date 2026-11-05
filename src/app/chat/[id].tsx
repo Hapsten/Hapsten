@@ -1,3 +1,5 @@
+import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import {
   Pressable,
   ScrollView,
@@ -7,15 +9,13 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 
 import { Brand } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { subscribeToMessages, sendMessage, Message, markMessagesAsRead } from '@/firebase/chat';
+import { subscribeToMessages, sendMessage, Message } from '@/firebase/chat';
 
 export default function ChatScreen() {
   const { user } = useAuth();
@@ -40,7 +40,9 @@ export default function ChatScreen() {
     });
 
     // Mark messages as read
-    markMessagesAsRead(chatId, user.uid);
+    import('@/firebase/chat').then(({ markMessagesAsRead }) => {
+      markMessagesAsRead(chatId, user.uid);
+    });
 
     return () => unsub();
   }, [user, chatId]);
@@ -57,6 +59,39 @@ export default function ChatScreen() {
   };
 
   const isSent = (msg: Message) => msg.senderId === user?.uid;
+
+  // Check if message is read by everyone (double check)
+  const isRead = (msg: Message) => {
+    if (isSent(msg)) {
+      return msg.readBy?.length > 1;
+    }
+    return true;
+  };
+
+  // Format time
+  const formatTime = (timestamp: any) => {
+    if (!timestamp) return '--:--';
+    const date = timestamp.toDate?.() ?? new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Check if we need a date separator
+  const isNewDay = (index: number) => {
+    if (index === 0) return true;
+    const prev = messages[index - 1].createdAt?.toDate?.() ?? new Date(0);
+    const curr = messages[index].createdAt?.toDate?.() ?? new Date(0);
+    return prev.toDateString() !== curr.toDateString();
+  };
+
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return '';
+    const date = timestamp.toDate?.() ?? new Date(timestamp);
+    return date.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   return (
     <View style={styles.screen}>
@@ -77,7 +112,7 @@ export default function ChatScreen() {
               Online
             </ThemedText>
           </View>
-          <View style={styles.backBtn} />
+          <View style={[styles.backBtn, { opacity: 0 }]} />
         </View>
 
         {loading ? (
@@ -93,39 +128,81 @@ export default function ChatScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled">
-            {messages.map((msg) => (
-              <View
-                key={msg.id}
-                style={[
-                  styles.messageWrapper,
-                  isSent(msg) ? styles.messageWrapperSent : styles.messageWrapperReceived,
-                ]}>
-                <View style={styles.messageBubble}>
-                  <ThemedText
-                    type="default"
-                    style={[
-                      styles.messageText,
-                      isSent(msg) ? styles.messageTextSent : styles.messageTextReceived,
-                    ]}
-                    themeColor="text"
-                  >
-                    {msg.content}
-                  </ThemedText>
-                  <ThemedText
-                    type="small"
-                    style={[
-                      styles.messageTime,
-                      isSent(msg) ? styles.messageTimeSent : styles.messageTimeReceived,
-                    ]}
-                    themeColor="textSecondary"
-                  >
-                    {msg.createdAt
-                      ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : '--:--'}
-                  </ThemedText>
+            {messages.map((msg, index) => (
+              <View key={msg.id} style={styles.messageContainer}>
+                {isNewDay(index) && (
+                  <View style={styles.dateSeparator}>
+                    <ThemedText type="small" style={styles.dateText} themeColor="textSecondary">
+                      {formatDate(msg.createdAt)}
+                    </ThemedText>
+                  </View>
+                )}
+                <View
+                  style={[
+                    styles.messageWrapper,
+                    isSent(msg) ? styles.messageWrapperSent : styles.messageWrapperReceived,
+                  ]}>
+                  {isSent(msg) ? null : (
+                    <View style={styles.avatar}>
+                      <ThemedText
+                        type="smallBold"
+                        style={styles.avatarText}
+                        themeColor="text"
+                      >
+                        U
+                      </ThemedText>
+                    </View>
+                  )}
+                  <View style={styles.bubbleContainer}>
+                    <View style={styles.bubble}>
+                      <ThemedText
+                        type="default"
+                        style={[
+                          styles.messageText,
+                          isSent(msg) ? styles.messageTextSent : styles.messageTextReceived,
+                        ]}
+                        themeColor="text"
+                      >
+                        {msg.content}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.statusRow}>
+                      <ThemedText
+                        type="small"
+                        style={[
+                          styles.messageTime,
+                          isSent(msg) ? styles.messageTimeSent : styles.messageTimeReceived,
+                        ]}
+                        themeColor="textSecondary"
+                      >
+                        {formatTime(msg.createdAt)}
+                      </ThemedText>
+                      {isSent(msg) && (
+                        <Ionicons
+                          name={isRead(msg) ? 'checkmark-circle' : 'checkmark'}
+                          size={16}
+                          color={
+                            isRead(msg)
+                              ? Brand.coral
+                              : isSent(msg)
+                              ? 'rgba(255,255,255,0.7)'
+                              : Brand.inkSecondary
+                          }
+                        />
+                      )}
+                    </View>
+                  </View>
+                  {!isSent(msg) ? null : (
+                    <View style={styles.avatar}>
+                      <ThemedText
+                        type="smallBold"
+                        style={styles.avatarText}
+                        themeColor="text"
+                      >
+                        U
+                      </ThemedText>
+                    </View>
+                  )}
                 </View>
               </View>
             ))}
@@ -222,21 +299,56 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingVertical: 14,
-    gap: 10,
-    alignItems: 'flex-start',
+    gap: 8,
+  },
+  messageContainer: {
+    width: '100%',
+    marginBottom: 4,
+  },
+  dateSeparator: {
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  dateText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Brand.inkSecondary,
+    backgroundColor: '#EDE8DF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   messageWrapper: {
     width: '100%',
-    alignItems: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'flex-end',
   },
   messageWrapperSent: {
     alignItems: 'flex-end',
+    flexDirection: 'row-reverse',
   },
   messageWrapperReceived: {
     alignItems: 'flex-start',
   },
-  messageBubble: {
-    maxWidth: '80%',
+  avatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Brand.iconChip,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 4,
+  },
+  avatarText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Brand.ink,
+  },
+  bubbleContainer: {
+    maxWidth: '75%',
+  },
+  bubble: {
+    maxWidth: '75%',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 16,
@@ -251,13 +363,18 @@ const styles = StyleSheet.create({
   messageTextReceived: {
     color: Brand.ink,
   },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 4,
+  },
   messageTime: {
     fontSize: 11,
-    marginTop: 4,
-    alignSelf: 'flex-end',
   },
   messageTimeSent: {
     color: 'rgba(255,255,255,0.7)',
+    marginRight: 4,
   },
   messageTimeReceived: {
     color: Brand.inkSecondary,
@@ -280,7 +397,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginHorizontal: 16,
     marginBottom: 16,
-    gap: 10,
+    gap: 8,
     shadowColor: '#000',
     shadowOpacity: 0.04,
     shadowRadius: 6,
