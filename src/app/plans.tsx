@@ -1,5 +1,5 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View, FlatList } from 'react-native';
+import { Pressable, StyleSheet, View, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useState } from 'react';
@@ -82,113 +82,120 @@ export default function PlansScreen() {
     );
   };
 
+  const renderHeader = () => (
+    <View style={styles.headerWrapper}>
+      {/* Header */}
+      <View style={styles.header}>
+        <ThemedText type="title" style={styles.title} themeColor="text">
+          Plans
+        </ThemedText>
+        <ThemedText
+          type="small"
+          style={styles.subtitle}
+          themeColor="textSecondary"
+        >
+          {hasIntent
+            ? `${params.activity} · squad ready to chat`
+            : 'Your upcoming squads and invites will live here.'}
+        </ThemedText>
+      </View>
+
+      {/* Active intent card */}
+      {hasIntent && (
+        <View style={styles.intentCard}>
+          <ThemedText type="smallBold" style={styles.intentActivity} themeColor="text">
+            {params.activity}
+          </ThemedText>
+          <ThemedText
+            type="small"
+            style={styles.intentMeta}
+            themeColor="textSecondary"
+          >
+            {[params.date, params.start && params.end ? `${params.start} – ${params.end}` : null]
+              .filter(Boolean)
+              .join(' · ')}
+          </ThemedText>
+          <ThemedText
+            type="small"
+            style={styles.intentHint}
+            themeColor="textSecondary"
+          >
+            Squad found — open the chat below to discuss the event.
+          </ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open group chat"
+            onPress={() => {
+              // Placeholder: in a real flow this would match with the event creator
+              // and open the group chat for this activity
+            }}
+            style={styles.openChatBtn}>
+            <ThemedText type="smallBold" style={styles.openChatText} themeColor="text">
+              Open chat
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Chat section header */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <ThemedText
+            type="smallBold"
+            style={styles.sectionTitle}
+            themeColor="textSecondary"
+          >
+            Messages
+          </ThemedText>
+          <ThemedText
+            type="small"
+            style={styles.sectionSub}
+            themeColor="textSecondary"
+          >
+            {chats.length} conversation{chats.length !== 1 ? 's' : ''}
+          </ThemedText>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderEmpty = () => {
+    if (loading) {
+      return (
+        <View style={styles.emptyWrapper}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Loading messages…
+          </ThemedText>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.emptyWrapper}>
+        <Ionicons name="chatbubbles-outline" size={40} color={Brand.inkSecondary} />
+        <ThemedText type="smallBold" style={styles.emptyTitle} themeColor="text">
+          No conversations yet
+        </ThemedText>
+        <ThemedText type="small" style={styles.emptySub} themeColor="textSecondary">
+          Chat with event organizers here once you match with an event.
+        </ThemedText>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <ScrollView
-          style={styles.scroll}
+        <FlatList
+          data={chats}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListHeaderComponent={renderHeader}
+          ListEmptyComponent={renderEmpty}
+          ListFooterComponent={<View style={styles.listFooter} />}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}>
-          {/* Header */}
-          <View style={styles.header}>
-            <ThemedText type="title" style={styles.title} themeColor="text">
-              Plans
-            </ThemedText>
-            <ThemedText
-              type="small"
-              style={styles.subtitle}
-              themeColor="textSecondary"
-            >
-              {hasIntent
-                ? `${params.activity} · squad ready to chat`
-                : 'Your upcoming squads and invites will live here.'}
-            </ThemedText>
-          </View>
-
-          {/* Active intent card */}
-          {hasIntent && (
-            <View style={styles.intentCard}>
-              <ThemedText type="smallBold" style={styles.intentActivity} themeColor="text">
-                {params.activity}
-              </ThemedText>
-              <ThemedText
-                type="small"
-                style={styles.intentMeta}
-                themeColor="textSecondary"
-              >
-                {[params.date, params.start && params.end ? `${params.start} – ${params.end}` : null]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </ThemedText>
-              <ThemedText
-                type="small"
-                style={styles.intentHint}
-                themeColor="textSecondary"
-              >
-                Squad found — open the chat below to discuss the event.
-              </ThemedText>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Open group chat"
-                onPress={() => {
-                  // Placeholder: in a real flow this would match with the event creator
-                  // and open the group chat for this activity
-                }}
-                style={styles.openChatBtn}>
-                <ThemedText type="smallBold" style={styles.openChatText} themeColor="text">
-                  Open chat
-                </ThemedText>
-              </Pressable>
-            </View>
-          )}
-
-          {/* Chat section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <ThemedText
-                type="smallBold"
-                style={styles.sectionTitle}
-                themeColor="textSecondary"
-              >
-                Messages
-              </ThemedText>
-              <ThemedText
-                type="small"
-                style={styles.sectionSub}
-                themeColor="textSecondary"
-              >
-                {chats.length} conversation{chats.length !== 1 ? 's' : ''}
-              </ThemedText>
-            </View>
-
-            {loading ? (
-              <View style={styles.loading}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Loading messages…
-                </ThemedText>
-              </View>
-            ) : chats.length === 0 ? (
-              <View style={styles.empty}>
-                <Ionicons name="chatbubbles-outline" size={40} color={Brand.inkSecondary} />
-                <ThemedText type="smallBold" style={styles.emptyTitle} themeColor="text">
-                  No conversations yet
-                </ThemedText>
-                <ThemedText type="small" style={styles.emptySub} themeColor="textSecondary">
-                  Chat with event organizers here once you match with an event.
-                </ThemedText>
-              </View>
-            ) : (
-              <FlatList
-                data={chats}
-                renderItem={renderItem}
-                keyExtractor={(item) => item.id}
-                ItemSeparatorComponent={() => <View style={styles.separator} />}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-              />
-            )}
-          </View>
-        </ScrollView>
+          contentContainerStyle={styles.listContent}
+        />
       </SafeAreaView>
       <BottomTabBar />
     </View>
@@ -204,13 +211,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Brand.cream,
   },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
+  headerWrapper: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 100,
+    paddingBottom: 16,
+    gap: 20,
   },
   header: {
     gap: 6,
@@ -338,8 +343,8 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 20,
   },
-  empty: {
-    flex: 1,
+  emptyWrapper: {
+    paddingVertical: 60,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 40,
@@ -356,9 +361,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  listFooter: {
+    height: 20,
   },
 });
