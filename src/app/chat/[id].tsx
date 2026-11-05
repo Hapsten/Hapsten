@@ -129,10 +129,9 @@ export default function ChatScreen() {
           <ScrollView
             ref={scrollRef}
             style={styles.scroll}
-            contentContainerStyle={{ flexGrow: 1 }}
+            contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled">
-            <View style={styles.messagesWrapper}>
               {messages.map((msg, index) => (
               <View key={msg.id} style={styles.messageContainer}>
                 {isNewDay(index) && (
@@ -216,7 +215,6 @@ export default function ChatScreen() {
                 </ThemedText>
               </View>
             )}
-            </View>
           </ScrollView>
         )}
 
