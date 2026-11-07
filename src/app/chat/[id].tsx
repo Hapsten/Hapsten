@@ -392,11 +392,12 @@ const styles = StyleSheet.create({
     color: Brand.inkSecondary,
   },
   empty: {
-    marginTop: 40,
-    alignSelf: 'center',
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   keyboardAvoiding: {
-    flex: 1,
+    // No flex:1 here — let it hug its content so the input bar stays at the bottom
   },
   inputContainer: {
     flexDirection: 'row',

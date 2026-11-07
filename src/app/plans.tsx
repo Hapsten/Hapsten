@@ -8,7 +8,12 @@ import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { Brand } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { subscribeToChats, Chat } from '@/firebase/chat';
+import {
+  subscribeToChats,
+  subscribeToEventChats,
+  getOrCreateChat,
+  Chat,
+} from '@/firebase/chat';
 
 export default function PlansScreen() {
   const params = useLocalSearchParams<{
@@ -18,7 +23,8 @@ export default function PlansScreen() {
     activity?: string;
   }>();
   const { user } = useAuth();
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [myChats, setMyChats] = useState<Chat[]>([]);
+  const [availableEvents, setAvailableEvents] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
 
   const hasIntent = Boolean(params.activity ?? params.date);
@@ -26,14 +32,36 @@ export default function PlansScreen() {
   useEffect(() => {
     if (!user) return;
 
-    const unsub = subscribeToChats(user.uid, (rawChats) => {
-      setChats(rawChats);
+    // Listen to chats where user is a participant
+    const unsub1 = subscribeToChats(user.uid, (rawChats) => {
+      setMyChats(rawChats);
+    });
+
+    // Listen to all event chats (for discovery by other users)
+    const unsub2 = subscribeToEventChats((rawChats) => {
+      const events = rawChats.filter(
+        (chat) => !chat.participants.includes(user.uid)
+      );
+      setAvailableEvents(events);
       setLoading(false);
     });
-    return () => unsub();
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [user]);
 
-  const renderItem = ({ item }: { item: Chat }) => {
+  const handleJoinChat = async (chat: Chat) => {
+    if (!user || !chat.activityId) return;
+    await getOrCreateChat([user.uid, ...chat.participants], {
+      activityId: chat.activityId,
+      activityTitle: chat.activityTitle,
+    });
+    router.push(`/chat/${chat.id}` as never);
+  };
+
+  const renderChatItem = ({ item }: { item: Chat }) => {
     const otherId = item.participants.find((id) => id !== user?.uid);
     return (
       <Pressable
@@ -82,9 +110,53 @@ export default function PlansScreen() {
     );
   };
 
+  const renderAvailableEvent = ({ item }: { item: Chat }) => {
+    const otherId = item.participants.find((id) => id !== user?.uid);
+    return (
+      <Pressable
+        key={item.id}
+        accessibilityRole="button"
+        accessibilityLabel={`Join ${item.activityTitle || 'event'}`}
+        onPress={() => handleJoinChat(item)}
+        style={styles.chatItem}>
+        <View style={styles.chatItemLeft}>
+          <View style={styles.avatar}>
+            <ThemedText type="smallBold" style={styles.avatarText} themeColor="text">
+              {otherId ? otherId.charAt(0).toUpperCase() : '?'}
+            </ThemedText>
+          </View>
+          <View style={styles.chatItemInfo}>
+            <ThemedText
+              type="smallBold"
+              style={styles.chatItemTitle}
+              themeColor="text"
+            >
+              {item.activityTitle || 'Event'}
+            </ThemedText>
+            <ThemedText
+              type="small"
+              style={styles.chatItemSub}
+              themeColor="textSecondary"
+            >
+              Join the group chat
+            </ThemedText>
+          </View>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Join chat"
+          onPress={() => handleJoinChat(item)}
+          style={styles.joinBtn}>
+          <ThemedText type="smallBold" style={styles.joinText} themeColor="text">
+            Join
+          </ThemedText>
+        </Pressable>
+      </Pressable>
+    );
+  };
+
   const renderHeader = () => (
     <View style={styles.headerWrapper}>
-      {/* Header */}
       <View style={styles.header}>
         <ThemedText type="title" style={styles.title} themeColor="text">
           Plans
@@ -100,7 +172,6 @@ export default function PlansScreen() {
         </ThemedText>
       </View>
 
-      {/* Active intent card */}
       {hasIntent && (
         <View style={styles.intentCard}>
           <ThemedText type="smallBold" style={styles.intentActivity} themeColor="text">
@@ -137,7 +208,6 @@ export default function PlansScreen() {
         </View>
       )}
 
-      {/* Chat section header */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <ThemedText
@@ -145,16 +215,37 @@ export default function PlansScreen() {
             style={styles.sectionTitle}
             themeColor="textSecondary"
           >
-            Messages
+            My Chats
           </ThemedText>
           <ThemedText
             type="small"
             style={styles.sectionSub}
             themeColor="textSecondary"
           >
-            {chats.length} conversation{chats.length !== 1 ? 's' : ''}
+            {myChats.length} conversation{myChats.length !== 1 ? 's' : ''}
           </ThemedText>
         </View>
+      </View>
+    </View>
+  );
+
+  const renderAvailableEventsHeader = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <ThemedText
+          type="smallBold"
+          style={styles.sectionTitle}
+          themeColor="textSecondary"
+        >
+          Available Events
+        </ThemedText>
+        <ThemedText
+          type="small"
+          style={styles.sectionSub}
+          themeColor="textSecondary"
+        >
+          {availableEvents.length} event{availableEvents.length !== 1 ? 's' : ''}
+        </ThemedText>
       </View>
     </View>
   );
@@ -164,7 +255,7 @@ export default function PlansScreen() {
       return (
         <View style={styles.emptyWrapper}>
           <ThemedText type="small" themeColor="textSecondary">
-            Loading messages…
+            Loading…
           </ThemedText>
         </View>
       );
@@ -176,7 +267,7 @@ export default function PlansScreen() {
           No conversations yet
         </ThemedText>
         <ThemedText type="small" style={styles.emptySub} themeColor="textSecondary">
-          Chat with event organizers here once you match with an event.
+          Create an event or join one to start chatting.
         </ThemedText>
       </View>
     );
@@ -186,13 +277,24 @@ export default function PlansScreen() {
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <FlatList
-          data={chats}
-          renderItem={renderItem}
+          data={myChats}
+          renderItem={renderChatItem}
           keyExtractor={(item) => item.id}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={renderHeader}
+          ListFooterComponent={
+            <>
+              {availableEvents.length > 0 && renderAvailableEventsHeader()}
+              <FlatList
+                data={availableEvents}
+                renderItem={renderAvailableEvent}
+                keyExtractor={(item) => item.id}
+                ItemSeparatorComponent={() => <View style={styles.separator} />}
+                showsVerticalScrollIndicator={false}
+              />
+            </>
+          }
           ListEmptyComponent={renderEmpty}
-          ListFooterComponent={<View style={styles.listFooter} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
         />
@@ -335,6 +437,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: Brand.inkSecondary,
+  },
+  joinBtn: {
+    backgroundColor: Brand.coral,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  joinText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   separator: {
     height: 1,

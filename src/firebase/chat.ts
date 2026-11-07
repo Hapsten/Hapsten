@@ -9,6 +9,7 @@ import {
   serverTimestamp,
   writeBatch,
   arrayUnion,
+  updateDoc,
 } from 'firebase/firestore';
 import { DocumentData } from 'firebase/firestore';
 import { db } from '@/firebase/config';
@@ -63,6 +64,14 @@ export async function getOrCreateChat(
   });
 
   if (matchingDoc) {
+    // If user is joining an existing chat and not yet a participant, add them
+    const docData = matchingDoc.data() as any;
+    const currentParticipants = docData.participants || [];
+    if (!currentParticipants.includes(participantIds[participantIds.length - 1])) {
+      await updateDoc(matchingDoc.ref, {
+        participants: arrayUnion(participantIds[participantIds.length - 1]),
+      });
+    }
     return matchingDoc.id;
   }
 
@@ -140,6 +149,28 @@ export function subscribeToChats(
       ...(doc.data() as DocumentData),
     })) as Chat[];
     // Sort client-side by lastMessageAt descending
+    chats.sort((a, b) => {
+      const aTime = a.lastMessageAt?.toDate?.() ?? new Date(0);
+      const bTime = b.lastMessageAt?.toDate?.() ?? new Date(0);
+      return bTime.getTime() - aTime.getTime();
+    });
+    callback(chats);
+  });
+}
+
+/**
+ * Listen to all event chats (chats that have an activityId).
+ * Used so other users can discover and join events.
+ */
+export function subscribeToEventChats(callback: (chats: Chat[]) => void) {
+  const chatsRef = collection(db, 'chats');
+  const q = query(chatsRef, where('activityId', '!=', null));
+
+  return onSnapshot(q, (snapshot) => {
+    const chats: Chat[] = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as DocumentData),
+    })) as Chat[];
     chats.sort((a, b) => {
       const aTime = a.lastMessageAt?.toDate?.() ?? new Date(0);
       const bTime = b.lastMessageAt?.toDate?.() ?? new Date(0);
