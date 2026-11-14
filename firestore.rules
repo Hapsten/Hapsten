@@ -1,0 +1,344 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // --------------------------------------------------------------- helpers
+    function isNonEmptyString(value, max) {
+      return value is string && value.size() > 0 && value.size() <= max;
+    }
+
+    function isOptionalString(value, max) {
+      return value == null || (value is string && value.size() <= max);
+    }
+
+    function isGeohash(value) {
+      return value is string && value.size() >= 5 && value.size() <= 12;
+    }
+
+    // Rules cannot read `latlng` components (field access is a type error), so
+    // the strongest available check is the type itself. The Firebase SDKs
+    // reject out-of-range coordinates when a GeoPoint is constructed, and the
+    // matchmaker re-validates ranges server-side before using an intent.
+    function isLatLng(value) {
+      return value is latlng;
+    }
+
+    // ---------------------------------------------------------------- users
+    // Profiles contain email, home coordinates and push tokens. They are
+    // private to their owner; do not widen this to "any signed-in user".
+    match /users/{userId} {
+      allow read: if signedIn() && userId == uid();
+
+      allow create: if signedIn()
+        && userId == uid()
+        && request.resource.data.uid == uid()
+        && isNonEmptyString(request.resource.data.displayName, 100)
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 200
+        && isOptionalString(request.resource.data.photoURL, 500)
+        && request.resource.data.homeGeo == null
+        && request.resource.data.homeGeohash == null
+        && request.resource.data.homeLabel == null
+        && request.resource.data.sports is list
+        && request.resource.data.sports.size() <= 10
+        && request.resource.data.sports.toSet().hasOnly([
+             'badminton', 'tennis', 'football', 'basketball', 'cricket', 'pickleball'
+           ])
+        && request.resource.data.skillLevel in ['any', 'beginner', 'intermediate', 'advanced']
+        && request.resource.data.expoPushToken == null
+        && request.resource.data.reliabilityScore is number
+        && request.resource.data.reliabilityScore >= 0
+        && request.resource.data.reliabilityScore <= 100
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      // The client may edit its own profile, but never identity or trust fields
+      // (uid, email, reliabilityScore, createdAt).
+      allow update: if signedIn()
+        && userId == uid()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.uid == uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'displayName', 'photoURL', 'sports', 'skillLevel',
+             'homeGeo', 'homeGeohash', 'homeLabel', 'expoPushToken', 'updatedAt'
+           ])
+        && isNonEmptyString(request.resource.data.displayName, 100)
+        && isOptionalString(request.resource.data.photoURL, 500)
+        && request.resource.data.sports is list
+        && request.resource.data.sports.size() <= 10
+        && request.resource.data.sports.toSet().hasOnly([
+             'badminton', 'tennis', 'football', 'basketball', 'cricket', 'pickleball'
+           ])
+        && request.resource.data.skillLevel in ['any', 'beginner', 'intermediate', 'advanced']
+        && (
+          request.resource.data.homeGeo == null
+          || isLatLng(request.resource.data.homeGeo)
+        )
+        && isOptionalString(request.resource.data.homeGeohash, 12)
+        && isOptionalString(request.resource.data.homeLabel, 200)
+        && isOptionalString(request.resource.data.expoPushToken, 200)
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------- intents
+    match /intents/{intentId} {
+      // Only the owner can read an intent. The matchmaker uses the Admin SDK,
+      // which bypasses rules.
+      allow read: if signedIn() && resource.data.uid == uid();
+
+      allow create: if signedIn()
+        && request.resource.data.uid == uid()
+        && request.resource.data.sport in [
+             'badminton', 'tennis', 'football', 'basketball', 'cricket', 'pickleball'
+           ]
+        && request.resource.data.startAt is timestamp
+        && request.resource.data.endAt is timestamp
+        && request.resource.data.startAt > request.time
+        && request.resource.data.endAt > request.resource.data.startAt
+        && request.resource.data.endAt
+             <= request.resource.data.startAt + duration.value(12, 'h')
+        && request.resource.data.expiresAt == request.resource.data.startAt
+        && isLatLng(request.resource.data.geo)
+        && isGeohash(request.resource.data.geohash)
+        && isNonEmptyString(request.resource.data.areaLabel, 200)
+        && request.resource.data.radiusKm is number
+        && request.resource.data.radiusKm > 0
+        && request.resource.data.radiusKm <= 50
+        && request.resource.data.skillLevel in ['any', 'beginner', 'intermediate', 'advanced']
+        && request.resource.data.status == 'searching'
+        && request.resource.data.eventId == null
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      // Owners can only cancel. `matched`/`expired` are written by the Admin SDK.
+      allow update: if signedIn()
+        && resource.data.uid == uid()
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // --------------------------------------------------------------- events
+    match /events/{eventId} {
+      // Open plans are discoverable; private squads are members-only.
+      allow read: if signedIn()
+        && (resource.data.isOpen == true || uid() in resource.data.participantIds);
+
+      allow create: if signedIn()
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.participantIds == [uid()]
+        && request.resource.data.chatId == eventId
+        && request.resource.data.sport in [
+             'badminton', 'tennis', 'football', 'basketball', 'cricket', 'pickleball'
+           ]
+        && request.resource.data.skillLevel in ['any', 'beginner', 'intermediate', 'advanced']
+        && request.resource.data.startAt is timestamp
+        && request.resource.data.endAt is timestamp
+        && request.resource.data.startAt > request.time
+        && request.resource.data.endAt > request.resource.data.startAt
+        && request.resource.data.endAt
+             <= request.resource.data.startAt + duration.value(12, 'h')
+        && isLatLng(request.resource.data.geo)
+        && isGeohash(request.resource.data.geohash)
+        && isNonEmptyString(request.resource.data.areaLabel, 200)
+        && request.resource.data.radiusKm is number
+        && request.resource.data.radiusKm > 0
+        && request.resource.data.radiusKm <= 50
+        && request.resource.data.capacity is int
+        && request.resource.data.capacity > 0
+        && request.resource.data.capacity <= 50
+        && request.resource.data.minPlayers is int
+        && request.resource.data.minPlayers >= 2
+        && request.resource.data.minPlayers <= request.resource.data.capacity
+        && request.resource.data.status == 'forming'
+        && request.resource.data.isOpen == true
+        && request.resource.data.source == 'open'
+        && request.resource.data.venueId == null
+        && request.resource.data.venueName == null
+        && request.resource.data.matchKey == null
+        && isNonEmptyString(request.resource.data.title, 120)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedIn() && (
+        // Existing member: leave, suggest a venue, or change status.
+        (
+          uid() in resource.data.participantIds
+          && request.resource.data.participantIds.toSet()
+               .difference(resource.data.participantIds.toSet()).hasOnly([uid()])
+          && resource.data.participantIds.toSet()
+               .difference(request.resource.data.participantIds.toSet()).hasOnly([uid()])
+          && request.resource.data.participantIds.size() <= resource.data.capacity
+          && request.resource.data.status in [
+               'forming', 'confirmed', 'venue_selected', 'cancelled', 'completed'
+             ]
+          // A regular member must not cancel a plan that still has players.
+          && (
+            request.resource.data.status != 'cancelled'
+            || resource.data.createdBy == uid()
+            || request.resource.data.participantIds.size() == 0
+          )
+          && (
+            request.resource.data.status != 'completed'
+            || resource.data.createdBy == uid()
+          )
+          // A venue must be real, and its name must match the venue document.
+          && (
+            request.resource.data.venueId == resource.data.venueId
+            || request.resource.data.venueId == null
+            || (
+              exists(/databases/$(database)/documents/venues/$(request.resource.data.venueId))
+              && request.resource.data.venueName
+                   == get(/databases/$(database)/documents/venues/$(request.resource.data.venueId))
+                        .data.name
+            )
+          )
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['participantIds', 'status', 'updatedAt', 'venueId', 'venueName'])
+        )
+        ||
+        // Newcomer joining an open plan: may only add themselves.
+        (
+          !(uid() in resource.data.participantIds)
+          && resource.data.isOpen == true
+          && resource.data.status in ['forming', 'confirmed']
+          && request.resource.data.participantIds.size()
+               == resource.data.participantIds.size() + 1
+          && request.resource.data.participantIds.hasAll(resource.data.participantIds)
+          && uid() in request.resource.data.participantIds
+          && request.resource.data.participantIds.size() <= resource.data.capacity
+          && request.resource.data.status in ['forming', 'confirmed']
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['participantIds', 'status', 'updatedAt'])
+        )
+      );
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------- chats
+    match /chats/{chatId} {
+      allow read: if signedIn() && uid() in resource.data.participants;
+
+      // Created together with its event by the host.
+      allow create: if signedIn()
+        && request.resource.data.participants == [uid()]
+        && request.resource.data.eventId == chatId
+        && isNonEmptyString(request.resource.data.activityTitle, 120)
+        && isNonEmptyString(request.resource.data.lastMessage, 2000)
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastReadAt.keys().hasOnly([uid()])
+        && getAfter(/databases/$(database)/documents/events/$(chatId))
+             .data.participantIds == [uid()]
+        && getAfter(/databases/$(database)/documents/events/$(chatId))
+             .data.chatId == chatId
+        && getAfter(/databases/$(database)/documents/events/$(chatId))
+             .data.createdBy == uid();
+
+      allow update: if signedIn() && (
+        // Metadata update by a current member (read receipts, chat preview).
+        (
+          uid() in resource.data.participants
+          && request.resource.data.participants == resource.data.participants
+          && request.resource.data.lastReadAt.diff(resource.data.lastReadAt)
+               .affectedKeys().hasOnly([uid()])
+          && isNonEmptyString(request.resource.data.lastMessage, 2000)
+          && request.resource.data.lastMessageAt is timestamp
+          && (
+            request.resource.data.lastMessageAt == resource.data.lastMessageAt
+            || request.resource.data.lastMessageAt == request.time
+          )
+          && (
+            request.resource.data.updatedAt == resource.data.updatedAt
+            || request.resource.data.updatedAt == request.time
+          )
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['lastReadAt', 'updatedAt', 'lastMessage', 'lastMessageAt'])
+        )
+        ||
+        // Membership change must mirror the event participant list exactly.
+        (
+          request.resource.data.participants != resource.data.participants
+          && request.resource.data.participants
+               == getAfter(/databases/$(database)/documents/events/$(chatId))
+                    .data.participantIds
+          && request.resource.data.participants.toSet()
+               .difference(resource.data.participants.toSet()).hasOnly([uid()])
+          && resource.data.participants.toSet()
+               .difference(request.resource.data.participants.toSet()).hasOnly([uid()])
+          && request.resource.data.lastReadAt.diff(resource.data.lastReadAt)
+               .affectedKeys().hasOnly([uid()])
+          && (
+            request.resource.data.updatedAt == resource.data.updatedAt
+            || request.resource.data.updatedAt == request.time
+          )
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['participants', 'lastReadAt', 'updatedAt'])
+        )
+      );
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        // Message access is derived from the event, not from the chat's cached
+        // participant list, so a stale chat document can never leak messages to
+        // someone who has left the plan.
+        function isEventMember() {
+          return uid() in get(
+            /databases/$(database)/documents/events/$(chatId)
+          ).data.participantIds;
+        }
+
+        allow read: if signedIn() && isEventMember();
+
+        allow create: if signedIn()
+          && isEventMember()
+          && request.resource.data.id == messageId
+          && request.resource.data.senderId == uid()
+          && request.resource.data.chatId == chatId
+          && request.resource.data.messageType in ['text', 'image', 'system']
+          && isNonEmptyString(request.resource.data.content, 2000)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.clientCreatedAt is number
+          && request.resource.data.readBy == [uid()]
+          // Clients may only post the known system templates; the matchmaker
+          // writes real system messages with the Admin SDK.
+          && (
+            request.resource.data.messageType != 'system'
+            || request.resource.data.content in [
+                 'Plan created. Share it or wait for players to join.',
+                 'A player joined the plan.',
+                 'A player left the plan.'
+               ]
+            || request.resource.data.content.matches('^Venue suggested: .{1,200}$')
+          );
+
+        allow update, delete: if false;
+      }
+    }
+
+    // --------------------------------------------------------------- venues
+    // Curated data. Only the console / Admin SDK may write.
+    match /venues/{venueId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+  }
+}

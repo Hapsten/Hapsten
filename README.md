@@ -78,7 +78,16 @@ Expo Go will open the app on your device.
 | `npm run ios` | Start and open on iOS simulator/device |
 | `npm run web` | Start on web browser |
 | `npm run lint` | Run ESLint |
+| `npm run typecheck` | Type-check TypeScript (`tsc --noEmit`) |
 | `npx tsc --noEmit` | Type-check TypeScript |
+
+---
+
+## 🏸 Matchmaking build
+
+The squad-matching flow (intents → matchmaker → event chat → venue suggestion) is documented in
+[`docs/ROADMAP.md`](docs/ROADMAP.md), including Firestore rules, indexes, and Cloud Functions
+deployment. Payment is intentionally not part of this phase.
 
 ---
 

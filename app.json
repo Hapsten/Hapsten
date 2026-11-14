@@ -26,6 +26,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Hapsteen uses your location to match you with players and courts nearby."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#E4574D",

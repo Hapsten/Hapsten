@@ -1,306 +1,282 @@
-import { useLocalSearchParams, router } from 'expo-router';
-import { Pressable, StyleSheet, View, FlatList } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomTabBar } from '@/components/bottom-tab-bar';
+import { getSport } from '@/constants/sports';
 import { Brand } from '@/constants/theme';
-import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  subscribeToChats,
-  subscribeToEventChats,
-  getOrCreateChat,
-  Chat,
-} from '@/firebase/chat';
+import { joinEvent, subscribeToMyEvents, subscribeToOpenEvents } from '@/firebase/events';
+import { cancelIntent, subscribeToMyIntent } from '@/firebase/intents';
+import { formatDayLabel, formatWindow } from '@/lib/plan-time';
+import type { Intent, SportEvent } from '@/types/models';
 
 export default function PlansScreen() {
-  const params = useLocalSearchParams<{
-    date?: string;
-    start?: string;
-    end?: string;
-    activity?: string;
-  }>();
   const { user } = useAuth();
-  const [myChats, setMyChats] = useState<Chat[]>([]);
-  const [availableEvents, setAvailableEvents] = useState<Chat[]>([]);
+  const [myEvents, setMyEvents] = useState<SportEvent[]>([]);
+  const [openEvents, setOpenEvents] = useState<SportEvent[]>([]);
+  const [intent, setIntent] = useState<Intent | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const hasIntent = Boolean(params.activity ?? params.date);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
 
-    // Listen to chats where user is a participant
-    const unsub1 = subscribeToChats(user.uid, (rawChats) => {
-      setMyChats(rawChats);
-    });
-
-    // Listen to all event chats (for discovery by other users)
-    const unsub2 = subscribeToEventChats((rawChats) => {
-      const events = rawChats.filter(
-        (chat) => !chat.participants.includes(user.uid)
-      );
-      setAvailableEvents(events);
-      setLoading(false);
-    });
+    const unsubMine = subscribeToMyEvents(
+      user.uid,
+      (events) => {
+        setMyEvents(events);
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+    const unsubOpen = subscribeToOpenEvents(
+      setOpenEvents,
+      () => undefined,
+    );
+    const unsubIntent = subscribeToMyIntent(user.uid, setIntent, () => undefined);
 
     return () => {
-      unsub1();
-      unsub2();
+      unsubMine();
+      unsubOpen();
+      unsubIntent();
     };
   }, [user]);
 
-  const handleJoinChat = async (chat: Chat) => {
-    if (!user || !chat.activityId) return;
-    await getOrCreateChat([user.uid, ...chat.participants], {
-      activityId: chat.activityId,
-      activityTitle: chat.activityTitle,
-    });
-    router.push(`/chat/${chat.id}` as never);
-  };
-
-  const renderChatItem = ({ item }: { item: Chat }) => {
-    const otherId = item.participants.find((id) => id !== user?.uid);
-    return (
-      <Pressable
-        key={item.id}
-        accessibilityRole="button"
-        accessibilityLabel={`Chat ${item.activityTitle || 'conversation'}`}
-        onPress={() => router.push(`/chat/${item.id}` as never)}
-        style={styles.chatItem}>
-        <View style={styles.chatItemLeft}>
-          <View style={styles.avatar}>
-            <ThemedText type="smallBold" style={styles.avatarText} themeColor="text">
-              {otherId ? otherId.charAt(0).toUpperCase() : '?'}
-            </ThemedText>
-          </View>
-          <View style={styles.chatItemInfo}>
-            <ThemedText
-              type="smallBold"
-              style={styles.chatItemTitle}
-              themeColor="text"
-            >
-              {item.activityTitle || 'Event chat'}
-            </ThemedText>
-            <ThemedText
-              type="small"
-              style={styles.chatItemSub}
-              themeColor="textSecondary"
-              numberOfLines={1}
-            >
-              {item.lastMessage || 'Start the conversation'}
-            </ThemedText>
-          </View>
-        </View>
-        <ThemedText
-          type="small"
-          style={styles.chatItemTime}
-          themeColor="textSecondary"
-        >
-          {item.lastMessageAt
-            ? new Date(item.lastMessageAt.toDate()).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-            : '--:--'}
-        </ThemedText>
-      </Pressable>
-    );
-  };
-
-  const renderAvailableEvent = ({ item }: { item: Chat }) => {
-    const otherId = item.participants.find((id) => id !== user?.uid);
-    return (
-      <Pressable
-        key={item.id}
-        accessibilityRole="button"
-        accessibilityLabel={`Join ${item.activityTitle || 'event'}`}
-        onPress={() => handleJoinChat(item)}
-        style={styles.chatItem}>
-        <View style={styles.chatItemLeft}>
-          <View style={styles.avatar}>
-            <ThemedText type="smallBold" style={styles.avatarText} themeColor="text">
-              {otherId ? otherId.charAt(0).toUpperCase() : '?'}
-            </ThemedText>
-          </View>
-          <View style={styles.chatItemInfo}>
-            <ThemedText
-              type="smallBold"
-              style={styles.chatItemTitle}
-              themeColor="text"
-            >
-              {item.activityTitle || 'Event'}
-            </ThemedText>
-            <ThemedText
-              type="small"
-              style={styles.chatItemSub}
-              themeColor="textSecondary"
-            >
-              Join the group chat
-            </ThemedText>
-          </View>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Join chat"
-          onPress={() => handleJoinChat(item)}
-          style={styles.joinBtn}>
-          <ThemedText type="smallBold" style={styles.joinText} themeColor="text">
-            Join
-          </ThemedText>
-        </Pressable>
-      </Pressable>
-    );
-  };
-
-  const renderHeader = () => (
-    <View style={styles.headerWrapper}>
-      <View style={styles.header}>
-        <ThemedText type="title" style={styles.title} themeColor="text">
-          Plans
-        </ThemedText>
-        <ThemedText
-          type="small"
-          style={styles.subtitle}
-          themeColor="textSecondary"
-        >
-          {hasIntent
-            ? `${params.activity} · squad ready to chat`
-            : 'Your upcoming squads and invites will live here.'}
-        </ThemedText>
-      </View>
-
-      {hasIntent && (
-        <View style={styles.intentCard}>
-          <ThemedText type="smallBold" style={styles.intentActivity} themeColor="text">
-            {params.activity}
-          </ThemedText>
-          <ThemedText
-            type="small"
-            style={styles.intentMeta}
-            themeColor="textSecondary"
-          >
-            {[params.date, params.start && params.end ? `${params.start} – ${params.end}` : null]
-              .filter(Boolean)
-              .join(' · ')}
-          </ThemedText>
-          <ThemedText
-            type="small"
-            style={styles.intentHint}
-            themeColor="textSecondary"
-          >
-            Squad found — open the chat below to discuss the event.
-          </ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open group chat"
-            onPress={() => {
-              // Placeholder: in a real flow this would match with the event creator
-              // and open the group chat for this activity
-            }}
-            style={styles.openChatBtn}>
-            <ThemedText type="smallBold" style={styles.openChatText} themeColor="text">
-              Open chat
-            </ThemedText>
-          </Pressable>
-        </View>
-      )}
-
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <ThemedText
-            type="smallBold"
-            style={styles.sectionTitle}
-            themeColor="textSecondary"
-          >
-            My Chats
-          </ThemedText>
-          <ThemedText
-            type="small"
-            style={styles.sectionSub}
-            themeColor="textSecondary"
-          >
-            {myChats.length} conversation{myChats.length !== 1 ? 's' : ''}
-          </ThemedText>
-        </View>
-      </View>
-    </View>
-  );
-
-  const renderAvailableEventsHeader = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <ThemedText
-          type="smallBold"
-          style={styles.sectionTitle}
-          themeColor="textSecondary"
-        >
-          Available Events
-        </ThemedText>
-        <ThemedText
-          type="small"
-          style={styles.sectionSub}
-          themeColor="textSecondary"
-        >
-          {availableEvents.length} event{availableEvents.length !== 1 ? 's' : ''}
-        </ThemedText>
-      </View>
-    </View>
-  );
-
-  const renderEmpty = () => {
-    if (loading) {
-      return (
-        <View style={styles.emptyWrapper}>
-          <ThemedText type="small" themeColor="textSecondary">
-            Loading…
-          </ThemedText>
-        </View>
-      );
+  const handleJoin = async (event: SportEvent) => {
+    if (!user) return;
+    setJoiningId(event.id);
+    try {
+      await joinEvent(event.id, user.uid);
+      router.push(`/chat/${event.id}` as never);
+    } catch (joinError: any) {
+      Alert.alert('Could not join', joinError?.message ?? 'Try again.');
+    } finally {
+      setJoiningId(null);
     }
-    return (
-      <View style={styles.emptyWrapper}>
-        <Ionicons name="chatbubbles-outline" size={40} color={Brand.inkSecondary} />
-        <ThemedText type="smallBold" style={styles.emptyTitle} themeColor="text">
-          No conversations yet
-        </ThemedText>
-        <ThemedText type="small" style={styles.emptySub} themeColor="textSecondary">
-          Create an event or join one to start chatting.
-        </ThemedText>
-      </View>
-    );
   };
+
+  const handleCancelIntent = async () => {
+    if (!intent) return;
+    try {
+      await cancelIntent(intent.id);
+      setIntent(null);
+    } catch (cancelError: any) {
+      Alert.alert('Could not cancel', cancelError?.message ?? 'Try again.');
+    }
+  };
+
+  const joinable = openEvents.filter(
+    (event) => user && !event.participantIds.includes(user.uid),
+  );
 
   return (
     <View style={styles.screen}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <FlatList
-          data={myChats}
-          renderItem={renderChatItem}
-          keyExtractor={(item) => item.id}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          ListHeaderComponent={renderHeader}
-          ListFooterComponent={
-            <>
-              {availableEvents.length > 0 && renderAvailableEventsHeader()}
-              <FlatList
-                data={availableEvents}
-                renderItem={renderAvailableEvent}
-                keyExtractor={(item) => item.id}
-                ItemSeparatorComponent={() => <View style={styles.separator} />}
-                showsVerticalScrollIndicator={false}
-              />
-            </>
-          }
-          ListEmptyComponent={renderEmpty}
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-        />
+          contentContainerStyle={styles.content}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Plans</Text>
+            <Text style={styles.subtitle}>
+              Your squads, active searches, and open plans.
+            </Text>
+          </View>
+
+          {intent ? (
+            <View style={styles.searchCard}>
+              <View style={styles.searchTop}>
+                <Text style={styles.searchEmoji}>{getSport(intent.sport).emoji}</Text>
+                <View style={styles.searchInfo}>
+                  <Text style={styles.searchTitle}>
+                    Searching for {getSport(intent.sport).label.toLowerCase()}
+                  </Text>
+                  <Text style={styles.searchMeta}>
+                    {formatDayLabel(intent.startAt)} ·{' '}
+                    {formatWindow(intent.startAt, intent.endAt)} · {intent.radiusKm} km
+                  </Text>
+                </View>
+                <View style={styles.pulseDot} />
+              </View>
+              <View style={styles.searchActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="View search"
+                  onPress={() => router.push('/searching' as never)}
+                  style={({ pressed }) => [styles.smallPrimary, pressed && styles.pressed]}>
+                  <Text style={styles.smallPrimaryText}>View search</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel search"
+                  onPress={handleCancelIntent}
+                  style={({ pressed }) => [styles.smallGhost, pressed && styles.pressed]}>
+                  <Text style={styles.smallGhostText}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          <SectionHeader title="My plans" count={myEvents.length} />
+          {loading ? (
+            <View style={styles.loading}>
+              <ActivityIndicator color={Brand.coral} />
+            </View>
+          ) : myEvents.length === 0 ? (
+            <Empty
+              icon="calendar-outline"
+              title="No plans yet"
+              body="Post an intent or join an open plan to get a group chat."
+            />
+          ) : (
+            myEvents.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                onPress={() => router.push(`/chat/${event.id}` as never)}
+              />
+            ))
+          )}
+
+          <SectionHeader title="Open plans" count={joinable.length} />
+          {joinable.length === 0 ? (
+            <Empty
+              icon="people-outline"
+              title="No open plans"
+              body="Host one with the + button, or post an intent and let the matcher find players."
+            />
+          ) : (
+            joinable.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                action={{
+                  label: joiningId === event.id ? 'Joining…' : 'Join',
+                  busy: joiningId === event.id,
+                  onPress: () => handleJoin(event),
+                }}
+              />
+            ))
+          )}
+        </ScrollView>
       </SafeAreaView>
       <BottomTabBar />
     </View>
+  );
+}
+
+function SectionHeader({ title, count }: { title: string; count: number }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionCount}>{count}</Text>
+    </View>
+  );
+}
+
+function Empty({
+  icon,
+  title,
+  body,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  body: string;
+}) {
+  return (
+    <View style={styles.empty}>
+      <Ionicons name={icon} size={26} color={Brand.inkSecondary} />
+      <View style={styles.emptyText}>
+        <Text style={styles.emptyTitle}>{title}</Text>
+        <Text style={styles.emptyBody}>{body}</Text>
+      </View>
+    </View>
+  );
+}
+
+function EventCard({
+  event,
+  onPress,
+  action,
+}: {
+  event: SportEvent;
+  onPress?: () => void;
+  action?: { label: string; busy?: boolean; onPress: () => void };
+}) {
+  const sport = getSport(event.sport);
+  const statusLabel =
+    event.status === 'forming'
+      ? 'Looking for players'
+      : event.status === 'confirmed'
+        ? 'Confirmed'
+        : event.status === 'venue_selected'
+          ? 'Venue set'
+          : event.status;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${event.title}, ${formatDayLabel(event.startAt)}`}
+      onPress={onPress}
+      disabled={!onPress}
+      style={({ pressed }) => [styles.card, pressed && onPress && styles.pressed]}>
+      <View style={styles.cardTop}>
+        <Text style={styles.cardEmoji}>{sport.emoji}</Text>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {event.title}
+          </Text>
+          <Text style={styles.cardMeta} numberOfLines={1}>
+            {formatDayLabel(event.startAt)} · {formatWindow(event.startAt, event.endAt)}
+          </Text>
+          <Text style={styles.cardMeta} numberOfLines={1}>
+            {event.areaLabel} · {event.participantIds.length}/{event.capacity} players
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.statusPill,
+            event.status === 'confirmed' && styles.statusPillConfirmed,
+          ]}>
+          <Text
+            style={[
+              styles.statusText,
+              event.status === 'confirmed' && styles.statusTextConfirmed,
+            ]}>
+            {statusLabel}
+          </Text>
+        </View>
+      </View>
+
+      {action ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          onPress={action.onPress}
+          disabled={action.busy}
+          style={({ pressed }) => [
+            styles.joinButton,
+            action.busy && styles.joinButtonBusy,
+            pressed && styles.pressed,
+          ]}>
+          {action.busy ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.joinText}>{action.label}</Text>
+          )}
+        </Pressable>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -311,17 +287,15 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    backgroundColor: Brand.cream,
   },
-  headerWrapper: {
+  content: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 16,
-    gap: 20,
+    paddingBottom: 28,
   },
   header: {
     gap: 6,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   title: {
     fontSize: 28,
@@ -334,149 +308,181 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: Brand.inkSecondary,
   },
-  intentCard: {
-    backgroundColor: Brand.cardBg,
-    borderWidth: 1,
-    borderColor: Brand.line,
+  searchCard: {
+    backgroundColor: Brand.limeSoft,
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
+    gap: 12,
     marginBottom: 20,
-    gap: 6,
   },
-  intentActivity: {
-    fontSize: 16,
-    fontWeight: '700',
+  searchTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  searchEmoji: {
+    fontSize: 24,
+  },
+  searchInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  searchTitle: {
+    fontSize: 15,
+    fontWeight: '800',
     color: Brand.ink,
   },
-  intentMeta: {
-    fontSize: 13,
-    color: Brand.inkSecondary,
+  searchMeta: {
+    fontSize: 12,
+    color: '#4A4A3A',
   },
-  intentHint: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: Brand.inkSecondary,
+  pulseDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Brand.coral,
   },
-  openChatBtn: {
-    marginTop: 10,
+  searchActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  smallPrimary: {
+    flex: 1,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: Brand.ink,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  openChatText: {
-    color: Brand.coral,
+  smallPrimaryText: {
+    color: '#fff',
+    fontSize: 13,
     fontWeight: '700',
   },
-  section: {
-    gap: 12,
+  smallGhost: {
+    flex: 1,
+    height: 38,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(28,27,26,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallGhostText: {
+    color: Brand.ink,
+    fontSize: 13,
+    fontWeight: '600',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginTop: 8,
+    marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: Brand.inkSecondary,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    color: Brand.inkSecondary,
   },
-  sectionSub: {
+  sectionCount: {
     fontSize: 12,
     color: Brand.inkSecondary,
   },
-  chatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  card: {
     backgroundColor: Brand.cardBg,
     borderWidth: 1,
     borderColor: Brand.line,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    borderRadius: 16,
+    padding: 14,
     marginBottom: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  chatItemLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Brand.iconChip,
-    alignItems: 'center',
-    justifyContent: 'center',
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
-  avatarText: {
+  cardEmoji: {
+    fontSize: 26,
+  },
+  cardInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  cardTitle: {
     fontSize: 15,
     fontWeight: '800',
     color: Brand.ink,
   },
-  chatItemInfo: {
-    flex: 1,
-  },
-  chatItemTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Brand.ink,
-  },
-  chatItemSub: {
-    fontSize: 13,
-    color: Brand.inkSecondary,
-    marginTop: 2,
-  },
-  chatItemTime: {
+  cardMeta: {
     fontSize: 12,
-    fontWeight: '600',
     color: Brand.inkSecondary,
   },
-  joinBtn: {
+  statusPill: {
+    backgroundColor: '#F1EDE4',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  statusPillConfirmed: {
+    backgroundColor: Brand.limeSoft,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Brand.inkSecondary,
+  },
+  statusTextConfirmed: {
+    color: '#3F4A1F',
+  },
+  joinButton: {
+    height: 42,
+    borderRadius: 999,
     backgroundColor: Brand.coral,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  joinButtonBusy: {
+    backgroundColor: Brand.coralDark,
   },
   joinText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '700',
   },
-  separator: {
-    height: 1,
-    backgroundColor: Brand.line,
-  },
-  listContent: {
-    paddingBottom: 20,
-  },
-  emptyWrapper: {
-    paddingVertical: 60,
+  loading: {
+    paddingVertical: 30,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 40,
+  },
+  empty: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: Brand.line,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  emptyText: {
+    flex: 1,
+    gap: 2,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: Brand.ink,
   },
-  emptySub: {
-    fontSize: 14,
+  emptyBody: {
+    fontSize: 12,
+    lineHeight: 17,
     color: Brand.inkSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
   },
-  listFooter: {
-    height: 20,
+  pressed: {
+    opacity: 0.85,
   },
 });

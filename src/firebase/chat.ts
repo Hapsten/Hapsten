@@ -1,28 +1,31 @@
 import {
   collection,
   doc,
-  getDocs,
-  addDoc,
-  query,
-  where,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
-  writeBatch,
-  arrayUnion,
   updateDoc,
+  where,
+  writeBatch,
+  type DocumentData,
 } from 'firebase/firestore';
-import { DocumentData } from 'firebase/firestore';
+import type { User } from 'firebase/auth';
+
 import { db } from '@/firebase/config';
-import { User } from 'firebase/auth';
 
 export type Chat = {
   id: string;
+  eventId?: string;
   participants: string[];
-  activityId?: string;
   activityTitle?: string;
   lastMessage?: string;
-  lastMessageAt: any;
-  createdAt: any;
+  lastMessageAt?: any;
+  createdAt?: any;
+  updatedAt?: any;
+  /** Map of uid -> Timestamp of the last message the user has seen. */
+  lastReadAt?: Record<string, any>;
 };
 
 export type Message = {
@@ -32,65 +35,14 @@ export type Message = {
   content: string;
   messageType: 'text' | 'image' | 'system';
   createdAt: any;
+  /** Client clock used for stable ordering while server timestamps resolve. */
+  clientCreatedAt?: number;
   readBy: string[];
 };
 
 /**
- * Get or create a 1:1 chat between two users for a specific activity.
- */
-export async function getOrCreateChat(
-  participantIds: string[],
-  options?: { activityId?: string; activityTitle?: string }
-): Promise<string> {
-  const sorted = [...participantIds].sort();
-  const chatsRef = collection(db, 'chats');
-
-  // Build query: by activityId if provided (different events = different chats),
-  // otherwise by exact participants match
-  let q;
-  if (options?.activityId) {
-    q = query(chatsRef, where('activityId', '==', options.activityId));
-  } else {
-    q = query(chatsRef, where('participants', '==', sorted));
-  }
-
-  const snapshot = await getDocs(q);
-
-  // Find exact participant match among results
-  const matchingDoc = snapshot.docs.find((doc) => {
-    const data = doc.data() as any;
-    const docParticipants = [...data.participants].sort();
-    return JSON.stringify(docParticipants) === JSON.stringify(sorted);
-  });
-
-  if (matchingDoc) {
-    // If user is joining an existing chat and not yet a participant, add them
-    const docData = matchingDoc.data() as any;
-    const currentParticipants = docData.participants || [];
-    if (!currentParticipants.includes(participantIds[participantIds.length - 1])) {
-      await updateDoc(matchingDoc.ref, {
-        participants: arrayUnion(participantIds[participantIds.length - 1]),
-      });
-    }
-    return matchingDoc.id;
-  }
-
-  // Create new chat
-  const now = serverTimestamp();
-  const chatData: Partial<Chat> = {
-    participants: sorted,
-    lastMessageAt: now,
-    createdAt: now,
-    ...(options?.activityId ? { activityId: options.activityId } : {}),
-    ...(options?.activityTitle ? { activityTitle: options.activityTitle } : {}),
-  };
-
-  const docRef = await addDoc(chatsRef, chatData);
-  return docRef.id;
-}
-
-/**
- * Send a message in a chat.
+ * Sends a message and updates the chat preview. The chat document must already
+ * exist (it is created together with the event).
  */
 export async function sendMessage({
   chatId,
@@ -104,10 +56,8 @@ export async function sendMessage({
   messageType?: 'text' | 'image' | 'system';
 }): Promise<string> {
   const now = serverTimestamp();
-
   const batch = writeBatch(db);
 
-  // Create the message
   const messagesRef = collection(db, 'chats', chatId, 'messages');
   const msgRef = doc(messagesRef);
   batch.set(msgRef, {
@@ -117,116 +67,102 @@ export async function sendMessage({
     content,
     messageType,
     createdAt: now,
+    clientCreatedAt: Date.now(),
     readBy: [senderId],
   });
 
-  // Update the chat's last message
-  const chatRef = doc(db, 'chats', chatId);
-  batch.update(chatRef, {
-    lastMessage: content,
-    lastMessageAt: now,
-  });
+  batch.set(
+    doc(db, 'chats', chatId),
+    { lastMessage: content, lastMessageAt: now, updatedAt: now },
+    { merge: true },
+  );
 
   await batch.commit();
   return msgRef.id;
 }
 
-/**
- * Listen to chats for a user (real-time).
- */
+/** Chats where the current user is a participant. */
 export function subscribeToChats(
   userId: string,
-  callback: (chats: Chat[]) => void
-) {
+  callback: (chats: Chat[]) => void,
+  onError?: (error: Error) => void,
+): () => void {
   const chatsRef = collection(db, 'chats');
-  // Query without orderBy to avoid needing a composite index;
-  // sorting is done client-side below.
   const q = query(chatsRef, where('participants', 'array-contains', userId));
 
-  return onSnapshot(q, (snapshot) => {
-    const chats: Chat[] = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...(doc.data() as DocumentData),
-    })) as Chat[];
-    // Sort client-side by lastMessageAt descending
-    chats.sort((a, b) => {
-      const aTime = a.lastMessageAt?.toDate?.() ?? new Date(0);
-      const bTime = b.lastMessageAt?.toDate?.() ?? new Date(0);
-      return bTime.getTime() - aTime.getTime();
-    });
-    callback(chats);
-  });
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const chats: Chat[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as DocumentData),
+      })) as Chat[];
+
+      chats.sort((a, b) => {
+        const aTime = a.lastMessageAt?.toDate?.() ?? new Date(0);
+        const bTime = b.lastMessageAt?.toDate?.() ?? new Date(0);
+        return bTime.getTime() - aTime.getTime();
+      });
+      callback(chats);
+    },
+    (error) => onError?.(error),
+  );
+}
+
+export function subscribeToChat(
+  chatId: string,
+  callback: (chat: Chat | null) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  return onSnapshot(
+    doc(db, 'chats', chatId),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        callback(null);
+        return;
+      }
+      callback({ id: snapshot.id, ...(snapshot.data() as DocumentData) } as Chat);
+    },
+    (error) => onError?.(error),
+  );
 }
 
 /**
- * Listen to all event chats (chats that have an activityId).
- * Used so other users can discover and join events.
- */
-export function subscribeToEventChats(callback: (chats: Chat[]) => void) {
-  const chatsRef = collection(db, 'chats');
-  const q = query(chatsRef, where('activityId', '!=', null));
-
-  return onSnapshot(q, (snapshot) => {
-    const chats: Chat[] = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...(doc.data() as DocumentData),
-    })) as Chat[];
-    chats.sort((a, b) => {
-      const aTime = a.lastMessageAt?.toDate?.() ?? new Date(0);
-      const bTime = b.lastMessageAt?.toDate?.() ?? new Date(0);
-      return bTime.getTime() - aTime.getTime();
-    });
-    callback(chats);
-  });
-}
-
-/**
- * Listen to messages in a chat (real-time), newest first.
+ * Messages ordered by server timestamp. `clientCreatedAt` is kept for
+ * potential local sorting but is not used in the query, because a query
+ * ordered by a missing field would silently drop matchmaker messages.
  */
 export function subscribeToMessages(
   chatId: string,
-  callback: (messages: Message[]) => void
-) {
+  callback: (messages: Message[]) => void,
+  onError?: (error: Error) => void,
+): () => void {
   const messagesRef = collection(db, 'chats', chatId, 'messages');
-  // Query without orderBy to avoid needing a composite index;
-  // sorting is done client-side below.
-  const q = query(messagesRef);
+  const q = query(messagesRef, orderBy('createdAt', 'asc'), limit(300));
 
-  return onSnapshot(q, (snapshot) => {
-    const messages: Message[] = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...(doc.data() as DocumentData),
-    })) as Message[];
-    // Sort client-side by createdAt ascending
-    messages.sort((a, b) => {
-      const aTime = a.createdAt?.toDate?.() ?? new Date(0);
-      const bTime = b.createdAt?.toDate?.() ?? new Date(0);
-      return aTime.getTime() - bTime.getTime();
-    });
-    callback(messages);
-  });
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const messages: Message[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as DocumentData),
+      })) as Message[];
+      callback(messages);
+    },
+    (error) => onError?.(error),
+  );
 }
 
 /**
- * Mark messages as read by the current user.
+ * Stores one timestamp per user instead of rewriting every message.
  */
-export async function markMessagesAsRead(chatId: string, userId: string) {
-  const messagesRef = collection(db, 'chats', chatId, 'messages');
-  // Fetch all messages and mark unread ones as read
-  const snapshot = await getDocs(messagesRef);
-  const batch = writeBatch(db);
-  snapshot.docs.forEach((docSnap) => {
-    const data = docSnap.data() as DocumentData;
-    if (!data.readBy || !data.readBy.includes(userId)) {
-      batch.update(docSnap.ref, { readBy: arrayUnion(userId) });
-    }
+export async function markChatRead(chatId: string, userId: string): Promise<void> {
+  await updateDoc(doc(db, 'chats', chatId), {
+    [`lastReadAt.${userId}`]: serverTimestamp(),
   });
-  await batch.commit();
 }
 
-/**
- * Get user display info from auth user object.
- */
+/** Get user display info from auth user object. */
 export function getUserDisplay(user: User | null) {
   return {
     name: user?.displayName || user?.email?.split('@')[0] || 'User',

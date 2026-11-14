@@ -1,66 +1,86 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { GeoPoint } from 'firebase/firestore';
 
+import { LocationCard } from '@/components/location-card';
+import { PlanForm, type PlanFormValue } from '@/components/plan-form';
 import { Brand } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
+import { createIntent } from '@/firebase/intents';
+import { useCurrentLocation } from '@/hooks/use-current-location';
+import { buildWindow, defaultDayOffset, defaultStartMinutes, isWindowInFuture } from '@/lib/plan-time';
 
 const HEADER_IMAGE =
   'https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=1000&q=80&auto=format&fit=crop';
 
-const DATE_OPTIONS = ['Today · Saturday, Sep 27', 'Tomorrow · Sunday, Sep 28', 'Monday, Sep 29'];
-const START_OPTIONS = ['6:30 PM', '7:00 PM', '7:30 PM'];
-const END_OPTIONS = ['9:00 PM', '10:00 PM', '11:00 PM'];
-const ACTIVITY_OPTIONS = [
-  'Picnic & easy conversation',
-  'Football · casual kickabout',
-  'Coffee & neighbourhood walk',
-  'Board games & chill',
-];
-
-function Field({
-  label,
-  value,
-  icon,
-  onPress,
-  accessibilityLabel,
-}: {
-  label: string;
-  value: string;
-  icon: string;
-  onPress: () => void;
-  accessibilityLabel: string;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => [styles.field, pressed && styles.fieldPressed]}>
-      <View style={styles.fieldIconWrap}>
-        <Text style={styles.fieldIcon}>{icon}</Text>
-      </View>
-      <View style={styles.fieldTextWrap}>
-        <Text style={styles.fieldLabel}>{label}</Text>
-        <Text style={styles.fieldValue} numberOfLines={1}>
-          {value}
-        </Text>
-      </View>
-      <Text style={styles.chevron}>﹀</Text>
-    </Pressable>
-  );
-}
-
-function cycle(options: string[], current: string) {
-  return options[(options.indexOf(current) + 1) % options.length];
-}
-
 export default function DiscoverScreen() {
-  const [date, setDate] = useState(DATE_OPTIONS[0]);
-  const [start, setStart] = useState(START_OPTIONS[0]);
-  const [end, setEnd] = useState(END_OPTIONS[0]);
-  const [activity, setActivity] = useState(ACTIVITY_OPTIONS[0]);
+  const { user } = useAuth();
+  const location = useCurrentLocation();
+  const requestLocation = location.request;
+  const [form, setForm] = useState<PlanFormValue>({
+    sport: 'badminton',
+    dayOffset: defaultDayOffset(),
+    startMinutes: defaultStartMinutes(),
+    durationMin: 120,
+    radiusKm: 10,
+    skillLevel: 'any',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    requestLocation();
+  }, [requestLocation]);
+
+  const { startAt, endAt } = buildWindow(form.dayOffset, form.startMinutes, form.durationMin);
+  const canSubmit =
+    Boolean(user) && Boolean(location.coords) && isWindowInFuture(startAt) && !submitting;
+
+  const handleSubmit = async () => {
+    if (!user) {
+      router.replace('/auth' as never);
+      return;
+    }
+    if (!location.coords) {
+      setError('Set your location first so we can match players around you.');
+      location.request();
+      return;
+    }
+    if (!isWindowInFuture(startAt)) {
+      setError('Pick a time at least 5 minutes from now.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const intentId = await createIntent({
+        uid: user.uid,
+        sport: form.sport,
+        startAt,
+        endAt,
+        geo: new GeoPoint(location.coords.latitude, location.coords.longitude),
+        areaLabel: location.label || 'Nearby',
+        radiusKm: form.radiusKm,
+        skillLevel: form.skillLevel,
+      });
+      router.push(`/searching?intentId=${intentId}` as never);
+    } catch (createError: any) {
+      setError(createError?.message ?? 'Could not post your intent. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -68,7 +88,6 @@ export default function DiscoverScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        {/* Header */}
         <View style={styles.header}>
           <Image source={{ uri: HEADER_IMAGE }} style={styles.headerImage} contentFit="cover" />
           <View style={styles.headerShade} />
@@ -86,75 +105,69 @@ export default function DiscoverScreen() {
           </SafeAreaView>
         </View>
 
-        {/* Sheet */}
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <Text style={styles.title}>What are you up for?</Text>
           <Text style={styles.subtitle}>
-            Set your window and activity. We&apos;ll match you with something close.
+            Set your window and sport. We&apos;ll group you with players nearby who want the same.
           </Text>
 
-          <View style={styles.fields}>
-            <Field
-              label="DATE"
-              value={date}
-              icon="▦"
-              accessibilityLabel={`Date, ${date}. Tap to change.`}
-              onPress={() => setDate(cycle(DATE_OPTIONS, date))}
-            />
-            <View style={styles.timeRow}>
-              <View style={styles.timeHalf}>
-                <Field
-                  label="START TIME"
-                  value={start}
-                  icon="◷"
-                  accessibilityLabel={`Start time, ${start}. Tap to change.`}
-                  onPress={() => setStart(cycle(START_OPTIONS, start))}
-                />
-              </View>
-              <View style={styles.timeHalf}>
-                <Field
-                  label="END TIME"
-                  value={end}
-                  icon="◷"
-                  accessibilityLabel={`End time, ${end}. Tap to change.`}
-                  onPress={() => setEnd(cycle(END_OPTIONS, end))}
-                />
-              </View>
-            </View>
-            <Field
-              label="ACTIVITY"
-              value={activity}
-              icon="⛺"
-              accessibilityLabel={`Activity, ${activity}. Tap to change.`}
-              onPress={() => setActivity(cycle(ACTIVITY_OPTIONS, activity))}
+          <View style={styles.locationBlock}>
+            <LocationCard
+              label={location.label}
+              status={location.status}
+              error={location.error}
+              onRequest={location.request}
             />
           </View>
+
+          <PlanForm
+            value={form}
+            onChange={(patch) => {
+              setForm((current) => ({ ...current, ...patch }));
+              setError(null);
+            }}
+          />
+
+          {!isWindowInFuture(startAt) ? (
+            <Text style={styles.error}>
+              That start time has passed. Pick a later time or another day.
+            </Text>
+          ) : null}
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <View style={styles.note}>
             <Text style={styles.noteIcon}>⚡</Text>
-            <Text style={styles.noteText}>You can change these details while we search.</Text>
+            <Text style={styles.noteText}>
+              No squad is created until enough players in range want the same sport at an
+              overlapping time.
+            </Text>
           </View>
 
-          {/* Spacer so CTA can stick to bottom on tall screens */}
           <View style={styles.spacer} />
         </View>
       </ScrollView>
 
-      {/* Sticky CTA */}
       <SafeAreaView style={styles.ctaWrap} edges={['bottom']}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Search nearby"
-          onPress={() =>
-            router.push({
-              pathname: '/map',
-              params: { date, start, end, activity },
-            } as never)
-          }
-          style={({ pressed }) => [styles.cta, pressed && styles.pressed]}>
-          <Text style={styles.ctaIcon}>⌕</Text>
-          <Text style={styles.ctaText}>Go · Search nearby</Text>
+          accessibilityLabel="Find a squad"
+          onPress={handleSubmit}
+          disabled={!canSubmit}
+          style={({ pressed }) => [
+            styles.cta,
+            !canSubmit && styles.ctaDisabled,
+            pressed && canSubmit && styles.pressed,
+          ]}>
+          {submitting ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Text style={styles.ctaIcon}>⌕</Text>
+              <Text style={styles.ctaText}>Find a squad</Text>
+            </>
+          )}
         </Pressable>
       </SafeAreaView>
     </View>
@@ -222,7 +235,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 12,
-    minHeight: 420,
   },
   handle: {
     width: 48,
@@ -244,61 +256,14 @@ const styles = StyleSheet.create({
     color: Brand.inkSecondary,
     marginTop: 6,
   },
-  fields: {
-    marginTop: 18,
-    gap: 12,
+  locationBlock: {
+    marginTop: 16,
   },
-  field: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: Brand.line,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  fieldPressed: {
-    opacity: 0.85,
-  },
-  fieldIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: Brand.iconChip,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fieldIcon: {
-    fontSize: 17,
-    color: Brand.coral,
-  },
-  fieldTextWrap: {
-    flex: 1,
-    gap: 1,
-  },
-  fieldLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    color: '#A8A39A',
-  },
-  fieldValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Brand.ink,
-  },
-  chevron: {
-    fontSize: 14,
-    color: '#A8A39A',
-  },
-  timeRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  timeHalf: {
-    flex: 1,
+  error: {
+    marginTop: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    color: Brand.coralDark,
   },
   note: {
     flexDirection: 'row',
@@ -308,7 +273,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginTop: 14,
+    marginTop: 16,
   },
   noteIcon: {
     fontSize: 15,
@@ -316,6 +281,7 @@ const styles = StyleSheet.create({
   noteText: {
     flex: 1,
     fontSize: 13,
+    lineHeight: 18,
     color: '#4A4A3A',
   },
   spacer: {
@@ -339,6 +305,11 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
+  },
+  ctaDisabled: {
+    backgroundColor: Brand.line,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   ctaIcon: {
     color: '#fff',

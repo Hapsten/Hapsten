@@ -11,29 +11,10 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { BottomTabBar } from '@/components/bottom-tab-bar';
+import { MAP_STYLE } from '@/constants/map-style';
 import { Brand } from '@/constants/theme';
 
 const CENTER = { latitude: 40.7168, longitude: -73.9562 };
-
-/** Muted, Snapchat-ish palette. Applies on Google Maps (Android / iOS w/ Google provider). */
-const SNAP_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#f2efe9' }] },
-  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8a857c' }] },
-  {
-    featureType: 'administrative.locality',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#6b6862' }],
-  },
-  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#e6e2d8' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#dde8d3' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
-  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#fbfaf7' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#efece3' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9a958c' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9d8e2' }] },
-];
 
 type NearbyPerson = {
   id: string;
@@ -169,18 +150,18 @@ export default function MapScreen() {
       <View style={styles.mapArea}>
         <MapView
           style={StyleSheet.absoluteFill}
-        customMapStyle={SNAP_MAP_STYLE}
-        initialRegion={{
-          ...CENTER,
-          latitudeDelta: 0.022,
-          longitudeDelta: 0.022,
-        }}
-        camera={{ center: CENTER, zoom: 14.5, pitch: 52, heading: 12 }}
-        showsUserLocation
-        showsMyLocationButton={false}
-        showsCompass={false}
-        toolbarEnabled={false}
-        pitchEnabled>
+          customMapStyle={MAP_STYLE}
+          initialRegion={{
+            ...CENTER,
+            latitudeDelta: 0.022,
+            longitudeDelta: 0.022,
+          }}
+          camera={{ center: CENTER, zoom: 14.5, pitch: 52, heading: 12 }}
+          showsUserLocation
+          showsMyLocationButton={false}
+          showsCompass={false}
+          toolbarEnabled={false}
+          pitchEnabled>
         {HALOS.map((halo) => (
           <Circle
             key={halo.id}

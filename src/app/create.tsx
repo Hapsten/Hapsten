@@ -1,166 +1,177 @@
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
+  Text,
   View,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { GeoPoint } from 'firebase/firestore';
 
-import { BottomTabBar } from '@/components/bottom-tab-bar';
+import { LocationCard } from '@/components/location-card';
+import { PlanForm, type PlanFormValue } from '@/components/plan-form';
 import { Brand } from '@/constants/theme';
-import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
-import { getOrCreateChat } from '@/firebase/chat';
+import { createOpenEvent } from '@/firebase/events';
+import { useCurrentLocation } from '@/hooks/use-current-location';
+import { buildWindow, defaultDayOffset, defaultStartMinutes, isWindowInFuture } from '@/lib/plan-time';
 
 export default function CreateEventScreen() {
   const { user } = useAuth();
-  const [time, setTime] = useState('Today · 5:00 – 7:00 PM');
-  const [event, setEvent] = useState('Football · casual kickabout');
-  const [location, setLocation] = useState('Newtown');
+  const location = useCurrentLocation();
+  const requestLocation = location.request;
+  const [form, setForm] = useState<PlanFormValue>({
+    sport: 'football',
+    dayOffset: defaultDayOffset(),
+    startMinutes: defaultStartMinutes(),
+    durationMin: 90,
+    radiusKm: 15,
+    skillLevel: 'any',
+  });
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    requestLocation();
+  }, [requestLocation]);
+
+  const { startAt, endAt } = buildWindow(form.dayOffset, form.startMinutes, form.durationMin);
+  const canCreate = Boolean(user) && Boolean(location.coords) && isWindowInFuture(startAt) && !creating;
 
   const handleCreate = async () => {
-    if (!user) return;
+    if (!user) {
+      router.replace('/auth' as never);
+      return;
+    }
+    if (!location.coords) {
+      setError('Set your location so players know where the plan is.');
+      location.request();
+      return;
+    }
+    if (!isWindowInFuture(startAt)) {
+      setError('Pick a time at least 5 minutes from now.');
+      return;
+    }
+
     setCreating(true);
+    setError(null);
     try {
-      // Create a Firebase chat for this event with the current user
-      const chatId = await getOrCreateChat([user.uid], {
-        activityId: event,
-        activityTitle: event,
+      const eventId = await createOpenEvent({
+        uid: user.uid,
+        sport: form.sport,
+        startAt,
+        endAt,
+        geo: new GeoPoint(location.coords.latitude, location.coords.longitude),
+        areaLabel: location.label || 'Nearby',
+        radiusKm: form.radiusKm,
+        skillLevel: form.skillLevel,
       });
-      // Open the chat
-      router.push(`/chat/${chatId}` as never);
-    } catch {
+      router.replace(`/chat/${eventId}` as never);
+    } catch (createError: any) {
+      setError(createError?.message ?? 'Could not create the plan. Try again.');
+    } finally {
       setCreating(false);
-      // Fallback: navigate to plans if chat creation fails
-      router.push(
-        `/plans?activity=${encodeURIComponent(event)}&date=${encodeURIComponent(time)}` as never,
-      );
     }
   };
 
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.body} edges={['top']}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}>
-          <Ionicons name="arrow-back" size={20} color={Brand.ink} />
-        </Pressable>
-        <ThemedText type="title" style={styles.title} themeColor="text">
-          Create event
-        </ThemedText>
-        <ThemedText type="small" style={styles.subtitle} themeColor="textSecondary">
-          Pick a time, game, and location — we&apos;ll open a group chat for everyone who joins.
-        </ThemedText>
+        <View style={styles.header}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            onPress={() => router.back()}
+            style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}>
+            <Ionicons name="arrow-back" size={20} color={Brand.ink} />
+          </Pressable>
+          <Text style={styles.title}>Host a plan</Text>
+          <Text style={styles.subtitle}>
+            Pick a sport and a window. We&apos;ll open one group chat for everyone who joins.
+          </Text>
+        </View>
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.keyboardAvoiding}
-          enabled>
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled">
-            <View style={styles.card}>
-              <Field
-                label="Time"
-                icon="time-outline"
-                value={time}
-                onChangeText={setTime}
-                placeholder="e.g. Today · 5:00 – 7:00 PM"
-              />
-              <Field
-                label="Event"
-                icon="football-outline"
-                value={event}
-                onChangeText={setEvent}
-                placeholder="e.g. Football · casual kickabout"
-              />
-              <Field
-                label="Location"
-                icon="location-outline"
-                value={location}
-                onChangeText={setLocation}
-                placeholder="e.g. Newtown"
-              />
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
+          <LocationCard
+            label={location.label}
+            status={location.status}
+            error={location.error}
+            onRequest={location.request}
+          />
+
+          <PlanForm
+            value={form}
+            onChange={(patch) => {
+              setForm((current) => ({ ...current, ...patch }));
+              setError(null);
+            }}
+          />
+
+          {!isWindowInFuture(startAt) ? (
+            <Text style={styles.error}>
+              That start time has passed. Pick a later time or another day.
+            </Text>
+          ) : null}
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <View style={styles.note}>
+            <Ionicons name="lock-closed-outline" size={15} color={Brand.ink} />
+            <Text style={styles.noteText}>
+              No payments yet — you&apos;ll suggest a venue and settle the court fee with your
+              squad.
+            </Text>
+          </View>
+        </ScrollView>
       </SafeAreaView>
 
       <SafeAreaView style={styles.ctaWrap} edges={['bottom']}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Create event and open chat"
+          accessibilityLabel="Create plan and open chat"
           onPress={handleCreate}
-          disabled={creating}
+          disabled={!canCreate}
           style={({ pressed }) => [
             styles.cta,
-            creating && styles.ctaDisabled,
-            pressed && !creating && styles.pressed,
+            !canCreate && styles.ctaDisabled,
+            pressed && canCreate && styles.pressed,
           ]}>
-          <Ionicons name={creating ? 'refresh-outline' : 'checkmark'} size={18} color="#fff" />
-          <ThemedText type="smallBold" style={styles.ctaText} themeColor="text">
-            {creating ? 'Creating…' : 'Create · Open chat'}
-          </ThemedText>
+          {creating ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="checkmark" size={18} color="#fff" />
+              <Text style={styles.ctaText}>Create · Open chat</Text>
+            </>
+          )}
         </Pressable>
       </SafeAreaView>
-
-      <BottomTabBar />
-    </View>
-  );
-}
-
-function Field({
-  label,
-  icon,
-  value,
-  onChangeText,
-  placeholder,
-}: {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  value: string;
-  onChangeText: (text: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <View style={styles.fieldWrapper} key={label}>
-      <View style={styles.fieldRow}>
-        <Ionicons name={icon} size={18} color={Brand.coral} />
-        <TextInput
-          style={styles.input}
-          placeholder={placeholder}
-          value={value}
-          onChangeText={onChangeText}
-          placeholderTextColor={Brand.inkSecondary}
-        />
-      </View>
-      <ThemedText type="small" style={styles.fieldLabel} themeColor="textSecondary">
-        {label}
-      </ThemedText>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Brand.cream },
-  body: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
-  keyboardAvoiding: { flex: 1 },
+  body: { flex: 1 },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    gap: 6,
+  },
   scroll: { flex: 1 },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingTop: 16,
+    paddingBottom: 40,
+    gap: 18,
   },
   backBtn: {
     width: 38,
@@ -171,41 +182,29 @@ const styles = StyleSheet.create({
     borderColor: Brand.line,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 6,
   },
   title: { fontSize: 28, fontWeight: '800', color: Brand.ink, letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, lineHeight: 20, color: Brand.inkSecondary, marginTop: 6 },
-  card: {
-    backgroundColor: Brand.cardBg,
-    borderWidth: 1,
-    borderColor: Brand.line,
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 16,
-    gap: 12,
+  subtitle: { fontSize: 14, lineHeight: 20, color: Brand.inkSecondary },
+  error: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Brand.coralDark,
   },
-  fieldWrapper: {
-    gap: 4,
-  },
-  fieldRow: {
+  note: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: Brand.line,
+    gap: 8,
+    backgroundColor: Brand.limeSoft,
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
-  input: {
+  noteText: {
     flex: 1,
-    color: Brand.ink,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  fieldLabel: {
-    marginLeft: 2,
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#4A4A3A',
   },
   ctaWrap: { backgroundColor: Brand.cream, paddingHorizontal: 20, paddingTop: 8 },
   cta: {
@@ -224,6 +223,8 @@ const styles = StyleSheet.create({
   },
   ctaDisabled: {
     backgroundColor: Brand.line,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   ctaText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   pressed: { opacity: 0.85 },

@@ -17,6 +17,7 @@ import {
   onAuthStateChanged,
   updateProfile,
 } from '@/firebase/config';
+import { ensureUserProfile } from '@/firebase/users';
 
 type AuthContextType = {
   user: User | null;
@@ -36,8 +37,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Listen to auth state changes
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
+      if (firebaseUser) {
+        try {
+          await ensureUserProfile(firebaseUser);
+        } catch {
+          // A missing profile must not block sign-in; it will be retried next launch.
+        }
+      }
       setLoading(false);
     });
     return () => unsub();
@@ -74,6 +82,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       );
       if (name && userCredential.user) {
         await updateProfile(userCredential.user, { displayName: name });
+      }
+      if (userCredential.user) {
+        await ensureUserProfile(userCredential.user);
       }
       router.replace('/' as never);
     } catch (error: any) {

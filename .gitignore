@@ -44,3 +44,8 @@ example
 
 # Firebase config (contains API keys - do not commit)
 src/firebase/config.ts
+
+# Firebase emulator artifacts
+.firebase/
+firestore-debug.log
+ui-debug.log
